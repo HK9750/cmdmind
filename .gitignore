@@ -1,0 +1,7 @@
+cmdmind
+*.db
+*.db-shm
+*.db-wal
+dist/
+bin/
+coverage.out
