@@ -16,7 +16,8 @@ Tagline: Your terminal remembers what worked.
 ## Install From Source
 
 ```bash
-go build -o ~/.local/bin/cmdmind ./cmd/cmdmind
+cargo build --release
+install -Dm755 target/release/cmdmind ~/.local/bin/cmdmind
 cmdmind init --bin ~/.local/bin/cmdmind --install-bashrc
 source ~/.bashrc
 ```
@@ -35,7 +36,7 @@ cmdmind stats
 cmdmind doctor
 ```
 
-If you run `init` from a temporary binary or `go run`, pass the installed binary path explicitly:
+If you run `init` from a temporary binary or `cargo run`, pass the installed binary path explicitly:
 
 ```bash
 cmdmind init --bin ~/.local/bin/cmdmind --install-bashrc
