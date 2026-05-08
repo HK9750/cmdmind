@@ -11,7 +11,7 @@ Tagline: Your terminal remembers what worked.
 - Search command history with `cmdmind search`
 - Suggest commands by typed prefix with `cmdmind suggest`
 - Rank suggestions by prefix match, project, directory, branch, frequency, recency, success rate, and safety
-- Show an inline suggestion while you type and accept it with `Tab`
+- Use `ble.sh` for smooth inline autosuggestions and a no-flicker plain Bash fallback
 
 ## Install From Source
 
@@ -44,25 +44,46 @@ cmdmind init --bin ~/.local/bin/cmdmind --install-bashrc
 
 ## Bash UX
 
+CmdMind has two Bash UI modes.
+
+### Smooth Mode With `ble.sh`
+
+For the best UI, install and source `ble.sh`, then source CmdMind after it:
+
+```bash
+source -- ~/.local/share/blesh/ble.sh --attach=none
+source ~/.cmdmind/cmdmind.sh
+[[ ! ${BLE_VERSION-} ]] || ble-attach
+```
+
+In this mode, CmdMind registers a native `ble.sh` auto-complete source. `ble.sh` owns line rendering, so suggestions do not flicker while you type.
+
 Type a prefix:
 
 ```bash
 dock
 ```
 
-CmdMind shows the top suggestion inline after the cursor:
+CmdMind shows the top suggestion as native `ble.sh` ghost text:
 
 ```text
 dock|er compose up -d
 ```
 
-The `|` above represents your cursor. Bash Readline cannot reliably render only part of `READLINE_LINE` with lower opacity, so CmdMind uses the safe Bash-native approximation: the suggested suffix is visible after the cursor, removed before execution unless you accept it, and accepted with `Tab`.
+The `|` above represents your cursor.
 
 Keys:
 
-- Type normally: refresh the top suggestion
-- `Tab`: accept the ghost suggestion
-- `Ctrl + Space`: manually refresh the current suggestion
+- Type normally: `ble.sh` refreshes the top suggestion after a short debounce
+- `Tab`: accept the CmdMind suggestion
+- Right arrow / `Ctrl+F`: use the default `ble.sh` auto-complete accept behavior
+
+### Plain Bash Fallback
+
+Without `ble.sh`, CmdMind does not bind every printable key. That avoids Bash Readline repaint flicker.
+
+- `Ctrl + Space`: show the top suggestion preview
+- `Tab`: accept the preview
 
 CmdMind inserts suggestions into the prompt. It never executes them automatically.
 
@@ -71,6 +92,8 @@ Autosuggest settings:
 ```bash
 export CMDMIND_AUTOSUGGEST=0   # disable automatic inline suggestions
 export CMDMIND_MIN_PREFIX=2    # require at least 2 typed characters
+export CMDMIND_DEBOUNCE_MS=80  # ble.sh auto-complete delay
+export CMDMIND_UI=plain        # force no-flicker plain Bash fallback
 ```
 
 ## Storage

@@ -108,7 +108,9 @@ mod tests {
     fn generated_hook_does_not_use_picker() {
         let script = script("cmdmind");
         assert!(!script.contains("--picker"));
-        assert!(script.contains("__cmdmind_bind_autosuggest_keys"));
+        assert!(!script.contains("__cmdmind_insert"));
+        assert!(script.contains("ble/complete/auto-complete/source:cmdmind"));
+        assert!(script.contains("__cmdmind_plain_suggest"));
         assert!(script.contains("CMDMIND_BIN='cmdmind'"));
     }
 }

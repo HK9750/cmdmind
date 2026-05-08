@@ -79,6 +79,8 @@ struct SuggestArgs {
     #[arg(long)]
     verbose: bool,
     #[arg(long)]
+    fast: bool,
+    #[arg(long)]
     db: Option<PathBuf>,
 }
 
@@ -189,9 +191,19 @@ fn suggest(args: SuggestArgs) -> Result<()> {
     let cwd = args
         .cwd
         .unwrap_or(std::env::current_dir().context("current directory")?);
-    let detected = project::detect(&cwd);
+    let detected = if args.fast {
+        project::detect_fast(&cwd)
+    } else {
+        project::detect(&cwd)
+    };
     let store = Store::open(db_path(args.db))?;
-    store.migrate()?;
+    if args.fast {
+        if !store.is_initialized()? {
+            return Ok(());
+        }
+    } else {
+        store.migrate()?;
+    }
 
     let suggestions = suggest::suggest(
         &store,
@@ -204,6 +216,7 @@ fn suggest(args: SuggestArgs) -> Result<()> {
             git_branch: detected.git_branch,
             limit: args.limit,
             now: Utc::now(),
+            fast: args.fast,
         },
     )?;
 

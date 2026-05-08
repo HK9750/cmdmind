@@ -16,16 +16,12 @@ __CMDMIND_START_NS=0
 __CMDMIND_LAST_CWD=""
 __CMDMIND_LAST_HISTNO=0
 __CMDMIND_IN_PROMPT=0
-__CMDMIND_SUGGESTIONS=()
-__CMDMIND_SUGGEST_INDEX=0
+
+__CMDMIND_SUGGESTION=""
 __CMDMIND_SUGGEST_PREFIX=""
+__CMDMIND_SUGGEST_CWD=""
 __CMDMIND_TAB_BOUND=0
 __CMDMIND_TAB_BINDING=''
-__CMDMIND_GHOST_FULL=""
-__CMDMIND_GHOST_SUFFIX=""
-__CMDMIND_GHOST_VISIBLE=0
-__CMDMIND_GHOST_ACTIVE=0
-__CMDMIND_GHOST_PREFIX=""
 
 __cmdmind_now_ns() {
   date +%s%N 2>/dev/null || date +%s000000000
@@ -56,8 +52,6 @@ __cmdmind_init_histno() {
   fi
 }
 
-__cmdmind_init_histno
-
 __cmdmind_capture_tab_binding() {
   local line
   __CMDMIND_TAB_BINDING=''
@@ -87,79 +81,126 @@ __cmdmind_bind_tab_accept() {
   fi
 }
 
-__cmdmind_clear_suggestions() {
-  __cmdmind_strip_ghost
-  __CMDMIND_SUGGESTIONS=()
-  __CMDMIND_SUGGEST_INDEX=0
+__cmdmind_clear_suggestion() {
+  __CMDMIND_SUGGESTION=""
   __CMDMIND_SUGGEST_PREFIX=""
-  __CMDMIND_GHOST_FULL=""
-  __CMDMIND_GHOST_SUFFIX=""
-  __CMDMIND_GHOST_PREFIX=""
-  __CMDMIND_GHOST_ACTIVE=0
+  __CMDMIND_SUGGEST_CWD=""
   __cmdmind_restore_tab_binding
 }
 
-__cmdmind_current_prefix() {
+__cmdmind_fetch() {
+  local prefix cwd suggestion min_prefix
+  prefix="$1"
+  cwd="${2:-$PWD}"
+  min_prefix="${CMDMIND_MIN_PREFIX:-2}"
+
+  if [ "${CMDMIND_AUTOSUGGEST:-1}" = "0" ]; then
+    return 1
+  fi
+  if [ -z "${prefix//[[:space:]]/}" ] || [ "${#prefix}" -lt "$min_prefix" ]; then
+    return 1
+  fi
+  if [ "$prefix" = "$__CMDMIND_SUGGEST_PREFIX" ] && [ "$cwd" = "$__CMDMIND_SUGGEST_CWD" ] && [ -n "$__CMDMIND_SUGGESTION" ]; then
+    printf '%s' "$__CMDMIND_SUGGESTION"
+    return 0
+  fi
+
+  suggestion="$(
+    "$CMDMIND_BIN" suggest \
+      --prefix "$prefix" \
+      --cwd "$cwd" \
+      --limit 1 \
+      --fast 2>/dev/null | {
+        IFS= read -r line
+        printf '%s' "$line"
+      }
+  )"
+
+  if [ -z "$suggestion" ] || [ "$suggestion" = "$prefix" ]; then
+    __CMDMIND_SUGGESTION=""
+    __CMDMIND_SUGGEST_PREFIX="$prefix"
+    __CMDMIND_SUGGEST_CWD="$cwd"
+    return 1
+  fi
+
+  __CMDMIND_SUGGESTION="$suggestion"
+  __CMDMIND_SUGGEST_PREFIX="$prefix"
+  __CMDMIND_SUGGEST_CWD="$cwd"
+  printf '%s' "$suggestion"
+}
+
+__cmdmind_prefix_from_readline() {
   printf '%s' "${READLINE_LINE:0:READLINE_POINT}"
 }
 
-__cmdmind_prefix_changed() {
-  [ "$(__cmdmind_current_prefix)" != "${__CMDMIND_SUGGEST_PREFIX:-}" ]
-}
-
-__cmdmind_line_at_end() {
-  [ "${READLINE_POINT:-0}" -eq "${#READLINE_LINE}" ]
-}
-
-__cmdmind_clear_ghost_display() {
-  __CMDMIND_GHOST_VISIBLE=0
-}
-
-__cmdmind_strip_ghost() {
-  local suffix_len after_start before suffix after
-  if [ "${__CMDMIND_GHOST_ACTIVE:-0}" != "1" ]; then
+__cmdmind_accept() {
+  local prefix suggestion after
+  prefix="$(__cmdmind_prefix_from_readline)"
+  suggestion="$__CMDMIND_SUGGESTION"
+  if [ -z "$suggestion" ] || [ "$prefix" != "$__CMDMIND_SUGGEST_PREFIX" ]; then
+    __cmdmind_restore_tab_binding
     return 0
   fi
 
-  suffix_len=${#__CMDMIND_GHOST_SUFFIX}
-  before="${READLINE_LINE:0:READLINE_POINT}"
-  suffix="${READLINE_LINE:READLINE_POINT:suffix_len}"
-  after_start=$((READLINE_POINT + suffix_len))
-  after="${READLINE_LINE:after_start}"
-  if [ "$suffix" = "${__CMDMIND_GHOST_SUFFIX:-}" ]; then
-    READLINE_LINE="${before}${after}"
-  else
-    READLINE_LINE="$before"
-  fi
-  READLINE_POINT=${#before}
-  __CMDMIND_GHOST_ACTIVE=0
-  __CMDMIND_GHOST_VISIBLE=0
-  __CMDMIND_GHOST_FULL=""
-  __CMDMIND_GHOST_SUFFIX=""
-  __CMDMIND_GHOST_PREFIX=""
+  after="${READLINE_LINE:READLINE_POINT}"
+  READLINE_LINE="${suggestion}${after}"
+  READLINE_POINT=${#suggestion}
+  __cmdmind_clear_suggestion
 }
 
-__cmdmind_make_ghost_suffix() {
-  local prefix suggestion
-  prefix="$1"
-  suggestion="$2"
-  if [ "$suggestion" = "$prefix" ]; then
-    printf ''
-  elif [[ "$suggestion" == "$prefix"* ]]; then
-    printf '%s' "${suggestion:${#prefix}}"
-  else
-    printf '  -> %s' "$suggestion"
-  fi
-}
-
-__cmdmind_draw_ghost() {
-  if [ -z "${__CMDMIND_GHOST_SUFFIX:-}" ]; then
+__cmdmind_plain_suggest() {
+  local prefix suggestion suffix
+  prefix="$(__cmdmind_prefix_from_readline)"
+  suggestion="$(__cmdmind_fetch "$prefix" "$PWD")" || {
+    __cmdmind_clear_suggestion
+    __cmdmind_message '\ncmdmind: no suggestion\n'
     return 0
+  }
+
+  __cmdmind_bind_tab_accept
+  if [[ "$suggestion" == "$prefix"* ]]; then
+    suffix="${suggestion:${#prefix}}"
+    __cmdmind_message '\ncmdmind: %s\033[2m\033[90m%s\033[0m  (Tab accept)\n' "$prefix" "$suffix"
+  else
+    __cmdmind_message '\ncmdmind: %s  (Tab accept)\n' "$suggestion"
   fi
-  READLINE_LINE="${__CMDMIND_GHOST_PREFIX}${__CMDMIND_GHOST_SUFFIX}"
-  READLINE_POINT=${#__CMDMIND_GHOST_PREFIX}
-  __CMDMIND_GHOST_ACTIVE=1
-  __CMDMIND_GHOST_VISIBLE=1
+}
+
+__cmdmind_ble_source() {
+  local prefix suggestion min_prefix
+  [ "${CMDMIND_AUTOSUGGEST:-1}" != "0" ] || return 1
+  [ "${_ble_edit_ind:-0}" -eq "${#_ble_edit_str}" ] || return 1
+
+  prefix="$_ble_edit_str"
+  min_prefix="${CMDMIND_MIN_PREFIX:-2}"
+  [ -n "${prefix//[[:space:]]/}" ] || return 1
+  [ "${#prefix}" -ge "$min_prefix" ] || return 1
+
+  suggestion="$(__cmdmind_fetch "$prefix" "$PWD")" || return 1
+  [[ "$suggestion" == "$prefix"* && "$suggestion" != "$prefix" ]] || return 1
+
+  ble/complete/auto-complete/enter h 0 "${suggestion:${#prefix}}" '' "$suggestion"
+}
+
+__cmdmind_setup_ble() {
+  [ "${CMDMIND_UI:-auto}" != "plain" ] || return 1
+  [ -n "${BLE_VERSION:-}" ] || return 1
+  declare -F ble/complete/auto-complete/enter >/dev/null || return 1
+
+  eval 'function ble/complete/auto-complete/source:cmdmind { __cmdmind_ble_source; }'
+
+  local source found=0
+  for source in "${_ble_complete_auto_source[@]}"; do
+    [ "$source" = cmdmind ] && found=1 && break
+  done
+  [ "$found" = "1" ] || _ble_complete_auto_source=(cmdmind "${_ble_complete_auto_source[@]}")
+
+  bleopt complete_auto_complete=1
+  bleopt complete_auto_delay="${CMDMIND_DEBOUNCE_MS:-20}"
+  ble-face -s auto_complete "${CMDMIND_GHOST_FACE:-fg=242}" 2>/dev/null || true
+  ble-bind -m auto_complete -f C-i auto_complete/insert 2>/dev/null || true
+  ble-bind -m auto_complete -f TAB auto_complete/insert 2>/dev/null || true
+  return 0
 }
 
 __cmdmind_preexec() {
@@ -215,166 +256,12 @@ __cmdmind_precmd() {
   __CMDMIND_LAST_CWD=""
   __CMDMIND_START_NS=0
   __CMDMIND_IN_PROMPT=0
-  __cmdmind_clear_suggestions
+  __cmdmind_clear_suggestion
+  __cmdmind_setup_ble >/dev/null 2>&1 || true
   return "$exit_code"
 }
 
-__cmdmind_autosuggest() {
-  local prefix suggestion min_prefix
-  __cmdmind_strip_ghost
-
-  if [ "${CMDMIND_AUTOSUGGEST:-1}" = "0" ]; then
-    __cmdmind_clear_suggestions
-    return 0
-  fi
-  if ! __cmdmind_line_at_end; then
-    __cmdmind_clear_suggestions
-    return 0
-  fi
-
-  prefix="${READLINE_LINE:0:READLINE_POINT}"
-  min_prefix="${CMDMIND_MIN_PREFIX:-1}"
-  if [ -z "${prefix//[[:space:]]/}" ] || [ "${#prefix}" -lt "$min_prefix" ]; then
-    __cmdmind_clear_suggestions
-    return 0
-  fi
-
-  suggestion="$("$CMDMIND_BIN" suggest --prefix "$prefix" --cwd "$PWD" --limit 1 2>/dev/null | { IFS= read -r line; printf '%s' "$line"; })"
-  if [ -z "$suggestion" ] || [ "$suggestion" = "$prefix" ] || [[ "$suggestion" != "$prefix"* ]]; then
-    __cmdmind_clear_suggestions
-    return 0
-  fi
-
-  __CMDMIND_SUGGESTIONS=("$suggestion")
-  __CMDMIND_GHOST_FULL="$suggestion"
-  __CMDMIND_GHOST_SUFFIX="$(__cmdmind_make_ghost_suffix "$prefix" "$suggestion")"
-  __CMDMIND_GHOST_PREFIX="$prefix"
-
-  __CMDMIND_SUGGEST_INDEX=0
-  __CMDMIND_SUGGEST_PREFIX="$prefix"
-
-  __cmdmind_bind_tab_accept
-  __cmdmind_draw_ghost
-}
-
-__cmdmind_suggest() {
-  __cmdmind_autosuggest
-  if [ "${#__CMDMIND_SUGGESTIONS[@]}" -eq 0 ]; then
-    __cmdmind_message '\ncmdmind: no suggestion\n'
-  fi
-}
-
-__cmdmind_accept() {
-  local selected after
-  if [ "${#__CMDMIND_SUGGESTIONS[@]}" -eq 0 ]; then
-    __cmdmind_restore_tab_binding
-    return 0
-  fi
-  if __cmdmind_prefix_changed; then
-    __cmdmind_clear_suggestions
-    return 0
-  fi
-  selected="${__CMDMIND_SUGGESTIONS[$__CMDMIND_SUGGEST_INDEX]}"
-  if [ "${__CMDMIND_GHOST_ACTIVE:-0}" = "1" ]; then
-    READLINE_LINE="$selected"
-  else
-    after="${READLINE_LINE:READLINE_POINT}"
-    READLINE_LINE="${selected}${after}"
-  fi
-  READLINE_POINT=${#selected}
-  __CMDMIND_SUGGESTIONS=()
-  __CMDMIND_SUGGEST_INDEX=0
-  __CMDMIND_SUGGEST_PREFIX=""
-  __CMDMIND_GHOST_FULL=""
-  __CMDMIND_GHOST_SUFFIX=""
-  __CMDMIND_GHOST_PREFIX=""
-  __CMDMIND_GHOST_ACTIVE=0
-  __CMDMIND_GHOST_VISIBLE=0
-  __cmdmind_restore_tab_binding
-}
-
-__cmdmind_cycle() {
-  local direction total
-  direction="$1"
-  total=${#__CMDMIND_SUGGESTIONS[@]}
-  if [ "$total" -eq 0 ]; then
-    return 0
-  fi
-  if __cmdmind_prefix_changed; then
-    __cmdmind_clear_suggestions
-    return 0
-  fi
-  if [ "$direction" = "prev" ]; then
-    __CMDMIND_SUGGEST_INDEX=$(( (__CMDMIND_SUGGEST_INDEX + total - 1) % total ))
-  else
-    __CMDMIND_SUGGEST_INDEX=$(( (__CMDMIND_SUGGEST_INDEX + 1) % total ))
-  fi
-  __CMDMIND_GHOST_FULL="${__CMDMIND_SUGGESTIONS[$__CMDMIND_SUGGEST_INDEX]}"
-  __CMDMIND_GHOST_SUFFIX="$(__cmdmind_make_ghost_suffix "$(__cmdmind_current_prefix)" "$__CMDMIND_GHOST_FULL")"
-  __cmdmind_draw_ghost
-}
-
-__cmdmind_next() {
-  __cmdmind_cycle next
-}
-
-__cmdmind_prev() {
-  __cmdmind_cycle prev
-}
-
-__cmdmind_backspace() {
-  local before after
-  __cmdmind_strip_ghost
-  if [ "${READLINE_POINT:-0}" -gt 0 ]; then
-    before="${READLINE_LINE:0:READLINE_POINT-1}"
-    after="${READLINE_LINE:READLINE_POINT}"
-    READLINE_LINE="${before}${after}"
-    READLINE_POINT=$((READLINE_POINT - 1))
-  fi
-  __cmdmind_autosuggest
-}
-
-__cmdmind_insert() {
-  local char before after
-  char="$1"
-  __cmdmind_strip_ghost
-  before="${READLINE_LINE:0:READLINE_POINT}"
-  after="${READLINE_LINE:READLINE_POINT}"
-  READLINE_LINE="${before}${char}${after}"
-  READLINE_POINT=$((READLINE_POINT + ${#char}))
-  __cmdmind_autosuggest
-}
-
-__cmdmind_before_accept_line() {
-  __cmdmind_strip_ghost
-  __CMDMIND_SUGGESTIONS=()
-  __CMDMIND_SUGGEST_INDEX=0
-  __CMDMIND_SUGGEST_PREFIX=""
-  __cmdmind_restore_tab_binding
-}
-
-__cmdmind_bind_autosuggest_keys() {
-  local key
-  if [ "${CMDMIND_AUTOSUGGEST:-1}" = "0" ]; then
-    return 0
-  fi
-  bind -x '"\C-x\C-o": __cmdmind_autosuggest' 2>/dev/null || true
-  bind -x '"\C-x\C-g": __cmdmind_before_accept_line' 2>/dev/null || true
-  bind '"\C-m": "\C-x\C-g\C-j"' 2>/dev/null || true
-  for key in a b c d e f g h i j k l m n o p q r s t u v w x y z A B C D E F G H I J K L M N O P Q R S T U V W X Y Z 0 1 2 3 4 5 6 7 8 9; do
-    bind -x '"'"$key"'": __cmdmind_insert '"$key" 2>/dev/null || true
-  done
-  bind -x '" ": __cmdmind_insert " "' 2>/dev/null || true
-  bind -x '"-": __cmdmind_insert -' 2>/dev/null || true
-  bind -x '"_": __cmdmind_insert _' 2>/dev/null || true
-  bind -x '".": __cmdmind_insert .' 2>/dev/null || true
-  bind -x '"/": __cmdmind_insert /' 2>/dev/null || true
-  bind -x '":": __cmdmind_insert :' 2>/dev/null || true
-  bind -x '"=": __cmdmind_insert =' 2>/dev/null || true
-  bind -x '"@": __cmdmind_insert @' 2>/dev/null || true
-  bind -x '"\C-?": __cmdmind_backspace' 2>/dev/null || true
-  bind -x '"\C-h": __cmdmind_backspace' 2>/dev/null || true
-}
+__cmdmind_init_histno
 
 if [[ ";$PROMPT_COMMAND;" != *";__cmdmind_precmd;"* ]]; then
   PROMPT_COMMAND="__cmdmind_precmd${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
@@ -382,10 +269,7 @@ fi
 
 trap '__cmdmind_preexec' DEBUG
 
-bind -x '"\C-@": __cmdmind_suggest' 2>/dev/null || true
-bind -x '"\C- ": __cmdmind_suggest' 2>/dev/null || true
-bind -x '"\e[1;5B": __cmdmind_next' 2>/dev/null || true
-bind -x '"\e[5B": __cmdmind_next' 2>/dev/null || true
-bind -x '"\e[1;5A": __cmdmind_prev' 2>/dev/null || true
-bind -x '"\e[5A": __cmdmind_prev' 2>/dev/null || true
-__cmdmind_bind_autosuggest_keys
+bind -x '"\C-@": __cmdmind_plain_suggest' 2>/dev/null || true
+bind -x '"\C- ": __cmdmind_plain_suggest' 2>/dev/null || true
+
+__cmdmind_setup_ble >/dev/null 2>&1 || true

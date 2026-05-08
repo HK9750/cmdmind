@@ -83,6 +83,19 @@ impl Store {
         Ok(())
     }
 
+    pub fn is_initialized(&self) -> Result<bool> {
+        let exists = self
+            .conn
+            .query_row(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'command_stats' LIMIT 1",
+                [],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+        Ok(exists)
+    }
+
     pub fn record(&mut self, input: RecordInput) -> Result<()> {
         if input.command_text.trim().is_empty() {
             return Err(anyhow!("command text is required"));

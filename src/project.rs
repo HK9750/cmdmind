@@ -51,6 +51,23 @@ pub fn detect(cwd: &Path) -> ProjectInfo {
     }
 }
 
+pub fn detect_fast(cwd: &Path) -> ProjectInfo {
+    let cwd = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
+    let root = marker_root(&cwd);
+    let (language, framework) = detect_stack(&root);
+    ProjectInfo {
+        name: root
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("shell")
+            .to_string(),
+        root_path: root.to_string_lossy().to_string(),
+        language,
+        framework,
+        ..ProjectInfo::default()
+    }
+}
+
 fn git_root(cwd: &Path) -> Option<PathBuf> {
     git_value(cwd, &["rev-parse", "--show-toplevel"]).map(PathBuf::from)
 }

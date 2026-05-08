@@ -21,6 +21,7 @@ pub struct Request {
     pub git_branch: Option<String>,
     pub limit: usize,
     pub now: DateTime<Utc>,
+    pub fast: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -38,7 +39,11 @@ pub struct Suggestion {
 
 pub fn suggest(store: &Store, req: Request) -> Result<Vec<Suggestion>> {
     let limit = if req.limit == 0 { 10 } else { req.limit };
-    let raw_limit = (limit * 80).max(500);
+    let raw_limit = if req.fast {
+        (limit * 32).clamp(32, 96)
+    } else {
+        (limit * 80).max(500)
+    };
     let candidates = store.suggestion_candidates(&req.prefix, raw_limit)?;
     let mut suggestions = candidates
         .into_iter()
@@ -253,6 +258,7 @@ mod tests {
             git_branch: Some("main".to_string()),
             limit: 3,
             now,
+            fast: false,
         };
 
         let failed = Candidate {
