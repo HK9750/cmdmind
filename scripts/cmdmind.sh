@@ -100,6 +100,9 @@ __cmdmind_fetch() {
   if [ -z "${prefix//[[:space:]]/}" ] || [ "${#prefix}" -lt "$min_prefix" ]; then
     return 1
   fi
+  if [[ "$prefix" == *$'\n'* || "$prefix" == *$'\r'* ]]; then
+    return 1
+  fi
   if [ "$prefix" = "$__CMDMIND_SUGGEST_PREFIX" ] && [ "$cwd" = "$__CMDMIND_SUGGEST_CWD" ] && [ -n "$__CMDMIND_SUGGESTION" ]; then
     printf '%s' "$__CMDMIND_SUGGESTION"
     return 0
@@ -117,6 +120,12 @@ __cmdmind_fetch() {
   )"
 
   if [ -z "$suggestion" ] || [ "$suggestion" = "$prefix" ]; then
+    __CMDMIND_SUGGESTION=""
+    __CMDMIND_SUGGEST_PREFIX="$prefix"
+    __CMDMIND_SUGGEST_CWD="$cwd"
+    return 1
+  fi
+  if [[ "$suggestion" == *$'\n'* || "$suggestion" == *$'\r'* ]]; then
     __CMDMIND_SUGGESTION=""
     __CMDMIND_SUGGEST_PREFIX="$prefix"
     __CMDMIND_SUGGEST_CWD="$cwd"
@@ -170,6 +179,7 @@ __cmdmind_ble_source() {
   local prefix suggestion min_prefix
   [ "${CMDMIND_AUTOSUGGEST:-1}" != "0" ] || return 1
   [ "${_ble_edit_ind:-0}" -eq "${#_ble_edit_str}" ] || return 1
+  [[ "$_ble_edit_str" != *$'\n'* && "$_ble_edit_str" != *$'\r'* ]] || return 1
 
   prefix="$_ble_edit_str"
   min_prefix="${CMDMIND_MIN_PREFIX:-2}"

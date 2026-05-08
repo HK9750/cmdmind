@@ -96,6 +96,15 @@ export CMDMIND_DEBOUNCE_MS=80  # ble.sh auto-complete delay
 export CMDMIND_UI=plain        # force no-flicker plain Bash fallback
 ```
 
+If you want pasted multiline command blocks to run like normal Bash instead of
+showing ble.sh's `-- MULTILINE --` staging prompt, set these after sourcing
+`ble.sh` and before `ble-attach`:
+
+```bash
+bleopt term_bracketed_paste_mode=
+bleopt accept_line_threshold=-1
+```
+
 ## Storage
 
 By default, CmdMind stores its SQLite database at:

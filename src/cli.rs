@@ -157,6 +157,8 @@ fn record(args: RecordArgs) -> Result<()> {
         return Ok(());
     }
 
+    let normalized_command = recorder::normalize(&args.cmd);
+
     let cwd = match args.cwd {
         Some(path) => path,
         None => std::env::current_dir().context("current directory")?,
@@ -169,8 +171,8 @@ fn record(args: RecordArgs) -> Result<()> {
     let hostname = args.hostname.or_else(default_hostname);
 
     let input = RecordInput {
-        command_text: args.cmd.clone(),
-        normalized_command: recorder::normalize(&args.cmd),
+        command_text: normalized_command.clone(),
+        normalized_command,
         cwd: cwd.to_string_lossy().to_string(),
         git_branch: detected.git_branch.clone(),
         project: detected,

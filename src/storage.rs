@@ -340,7 +340,7 @@ fn candidate_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Candidate> {
     let git_branch: String = row.get(6)?;
     let last_used_at: String = row.get(11)?;
     Ok(Candidate {
-        command_text: row.get(0)?,
+        command_text: row.get(1)?,
         project_root: row.get(3)?,
         last_cwd: row.get(5)?,
         git_branch: (!git_branch.is_empty()).then_some(git_branch),
@@ -564,6 +564,37 @@ mod tests {
         assert_eq!(stats.len(), 1);
         assert_eq!(stats[0].used_count, 2);
         assert_eq!(stats[0].success_rate, 1.0);
+        Ok(())
+    }
+
+    #[test]
+    fn suggestions_return_normalized_single_line_commands() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let db_path = dir.path().join("cmdmind.db");
+        let mut store = Store::open(&db_path)?;
+        store.migrate()?;
+
+        store.record(RecordInput {
+            command_text: "git commit -m 'hello\nworld'".to_string(),
+            normalized_command: "git commit -m 'hello world'".to_string(),
+            cwd: "/repo".to_string(),
+            project: ProjectInfo {
+                root_path: "/repo".to_string(),
+                name: "repo".to_string(),
+                ..ProjectInfo::default()
+            },
+            git_branch: None,
+            exit_code: 0,
+            duration_ms: None,
+            shell: "bash".to_string(),
+            hostname: None,
+            created_at: Utc::now(),
+        })?;
+
+        let candidates = store.suggestion_candidates("git", 10)?;
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].command_text, "git commit -m 'hello world'");
+        assert!(!candidates[0].command_text.contains('\n'));
         Ok(())
     }
 }
